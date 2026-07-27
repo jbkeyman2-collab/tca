@@ -1,235 +1,212 @@
-A Proposal for a Tiered Cognitive Architecture for AI Systems
-Executive Summary
+# A Proposal for a Tiered Cognitive Architecture for AI Systems
 
-Current AI systems are built around a powerful computational engine: the large language model (LLM). As these systems have evolved, however, the language model has gradually become responsible for an expanding range of functions beyond probabilistic inference, including conversation state, memory management, constraint tracking, execution planning, tool routing, and logical verification.
+## Executive Summary
 
-This concentration of responsibility forces fundamentally different classes of computation through the same probabilistic engine. The result is structural inefficiency: repeated processing of conversational history, increasing computational cost, context degradation over long interactions, and growing cognitive friction for users forced into iterative debugging cycles.
+Current AI systems are built around a remarkably capable computational engine: the large language model (LLM). As these systems have evolved, however, the language model has gradually assumed responsibility for functions extending well beyond probabilistic inference, including conversation state reconstruction, memory management, planning, constraint tracking, tool routing, and execution coordination.
 
-This proposal explores a different architectural direction.
+This concentration of responsibility forces fundamentally different classes of computation through the same probabilistic engine. The result is structural inefficiency: repeated reconstruction of conversational state, increasing computational cost, degradation over long interactions, and growing cognitive friction for users who must repeatedly correct incorrect assumptions or redirect the conversation.
 
-Rather than treating the language model as the operating system of an AI, it proposes separating executive cognition from computational inference. A persistent Executive Cognitive Kernel maintains system state, compiles task-specific execution contexts, and dispatches work to specialized computational engines.
+This proposal explores an alternative architectural direction.
 
-The guiding principle is simple:
+Rather than treating the language model as the operating system of an AI system, it proposes separating executive cognition from computational inference.
 
-Different classes of cognitive work should be performed by the computational substrate best suited to perform them.
+Executive cognition refers to the functions responsible for maintaining goals, managing working state, selecting relevant information, coordinating specialised computational resources, and integrating results into persistent knowledge. These functions are distinct from language generation or probabilistic reasoning and therefore need not rely on the same computational substrate.
 
-The Current Architecture and Its Structural Limitations
+The proposed architecture introduces a persistent Executive Cognitive Kernel that maintains structured cognitive state, compiles task-specific execution contexts, and dispatches work to specialised computational engines.
 
-Modern AI systems consist of sophisticated infrastructure surrounding a language model, including CPUs, GPUs, retrieval systems, databases, serving engines, orchestration layers, and external tools.
+> **Guiding Principle:**
+> Different classes of cognitive work should be performed by the computational substrate best suited to perform them.
 
-Despite this complexity, the language model frequently serves as the de facto executive controller. Every interaction reconstructs conversational context, interprets goals, performs planning, and generates responses through repeated neural inference.
+---
 
-This architecture naturally produces several structural limitations.
+## The Current Architecture and Its Structural Limitations
 
-Repeated Context Processing
+Modern AI systems already consist of sophisticated infrastructure surrounding a language model, including CPUs, GPUs, retrieval systems, databases, serving engines, orchestration layers, safety systems, and external tools.
 
-Conversation history continually grows while much of its content becomes irrelevant to the current task. Although modern inference engines employ numerous optimizations, repeatedly reconstructing state from conversational history remains an architectural overhead independent of any specific transformer implementation.
+Despite this complexity, the language model frequently functions as the system's de facto executive controller. Each interaction reconstructs conversational state, interprets user intent, selects relevant information, performs planning, and generates responses through repeated neural inference.
 
-Context Degradation
+This proposal argues that many limitations commonly attributed to language models may instead arise from this architectural arrangement.
 
-As conversations become longer, outdated assumptions, abandoned hypotheses, or earlier mistakes may continue influencing subsequent reasoning. Recovering from these errors often requires repeated corrective interactions.
+### Reconstructing Working State
+Current systems repeatedly ask a probabilistic model to reconstruct its own working state from conversational history. Working state therefore becomes an inference by-product rather than an explicitly managed system resource. As conversations grow longer, reconstruction becomes increasingly expensive while simultaneously becoming more susceptible to ambiguity, outdated assumptions, and accumulated errors. This proposal instead treats working state as an architectural responsibility independent of model inference.
 
-Human Productivity Cost
+### Repeated Context Processing
+Conversation histories continually expand while much of their content becomes irrelevant to the current task. Although modern inference systems employ sophisticated optimisation techniques, repeatedly reconstructing state from growing conversational history remains an architectural overhead independent of any particular transformer implementation.
 
-When AI systems require multiple correction cycles before producing an acceptable result, the computational cost is only part of the problem. Users themselves become the debugging system, interrupting concentration, increasing cognitive load, and reducing overall productivity.
+### Context Degradation
+Long conversations naturally accumulate abandoned ideas, superseded assumptions, exploratory reasoning, and corrected mistakes. These elements may continue influencing subsequent inference despite no longer representing the desired cognitive state. Recovering often requires additional interactions whose primary purpose is correcting previous generations.
 
-Architectural Principle
+### Human Productivity Cost
+The computational cost of repeated correction is only part of the problem. Users themselves become the debugging system. Every unnecessary correction interrupts concentration, pollutes conversational history, increases cognitive load, and reduces productivity.
 
-This proposal is not an incremental refinement of existing agentic systems.
+---
 
-It proposes relocating executive cognition outside the probabilistic inference engine, allowing specialized computational systems to perform the classes of reasoning for which they are naturally suited.
+## Architectural Principle
 
-Language generation.
+This proposal is not an incremental refinement of existing agentic architectures. Instead, it relocates executive cognition outside the probabilistic inference engine.
 
-Logical reasoning.
+Language generation, logical verification, planning, optimisation, retrieval, symbolic reasoning, memory organisation, and execution coordination represent different computational problems. They should not necessarily share the same computational mechanism.
 
-Memory organization.
+Rather than forcing every cognitive function through neural inference, the architecture assigns each class of computation to the substrate most naturally suited to perform it.
 
-Planning.
+---
 
-Retrieval.
-
-Optimization.
-
-These are distinct computational problems.
-
-They should not necessarily share the same computational mechanism.
-
-Tier One — Executive Cognitive Kernel
+## Tier One: Executive Cognitive Kernel
 
 The Executive Cognitive Kernel functions as the persistent operating system of the cognitive architecture.
 
-Unlike today's stateless inference model, the Kernel maintains continuous cognitive state independent of any individual model invocation.
+Unlike today's stateless inference model, the Kernel maintains continuous cognitive state independently of any individual model invocation.
 
 Its responsibilities include:
+- Maintaining persistent cognitive state
+- Tracking goals, projects, and objectives
+- Managing structured knowledge
+- Selecting relevant information
+- Compiling execution contexts
+- Dispatching specialised computation
+- Integrating returned results
+- Coordinating heterogeneous computational resources
 
-Maintaining persistent cognitive state.
-Tracking goals, tasks, and user preferences.
-Managing structured knowledge.
-Selecting relevant information.
-Compiling task-specific execution contexts.
-Dispatching computation.
-Integrating returned results.
-Coordinating all specialized computational resources.
+Importantly, the Executive Kernel is deterministic. Its purpose is not to perform every form of reasoning itself. Its purpose is to coordinate reasoning.
 
-Importantly, the Executive Kernel is deterministic.
+This role is loosely analogous to executive function in biological cognition, which coordinates attention, working memory, and goal management without directly performing every specialised cognitive operation.
 
-Its purpose is not to perform reasoning itself, but to coordinate reasoning.
+### Context Compilation
+Context compilation is the defining mechanism of the proposed architecture. The Executive Kernel does not replay conversations. It compiles context.
 
-Context Compilation
+Rather than transmitting an entire conversational transcript to a language model, the Kernel constructs a minimal execution payload derived from structured cognitive state. Each payload contains only the information necessary to complete the current task. Temporary execution contexts are discarded after completion. Persistent cognitive state remains independent of model inference.
 
-The Executive Kernel does not replay conversations.
+This separates long-term knowledge from temporary working context while reducing computational overhead and preventing obsolete conversational history from unnecessarily influencing future reasoning.
 
-It compiles context.
+### Persistent Cognitive State
+Conversation transcripts are not treated as memory. Instead, the Executive Kernel maintains structured system state describing the current cognitive environment. Examples include:
+- User preferences
+- Established facts
+- Active projects
+- Current objectives
+- Unresolved questions
+- Hypotheses under evaluation
+- Procedural knowledge
+- Relationships between concepts
 
-Rather than sending an entire transcript to a language model, the Kernel constructs a minimal execution payload derived from structured cognitive state.
+The Executive Kernel owns this state. Computational engines consume selected portions of it.
 
-This payload contains only the information necessary for the current task.
+### Context Compilation as a Research Problem
+Context compilation is itself a computational problem. This proposal defines its architectural role but intentionally does not prescribe a single implementation. Possible approaches may combine deterministic rules, learned retrieval policies, symbolic reasoning, probabilistic relevance estimation, semantic indexing, graph traversal, or future specialised algorithms.
 
-Temporary execution contexts are discarded after completion.
+Determining the optimal compilation strategy remains an open area for empirical research rather than a fixed design assumption.
 
-Persistent cognitive state remains independent of model inference.
+---
 
-This approach separates long-term knowledge from temporary working context while reducing the influence of obsolete conversational history.
+## Tier Two: Specialised Computation Layer
 
-Persistent Cognitive State
+Tier Two consists of heterogeneous computational resources optimised for different classes of computation. The Executive Kernel determines which computational substrate is appropriate for each task.
 
-Rather than treating conversation transcripts as memory, the Executive Kernel maintains structured system state.
-
-Examples include:
-
-user preferences
-established facts
-active projects
-current objectives
-hypotheses under evaluation
-procedural knowledge
-relationships between concepts
-
-The Executive Kernel owns this state.
-
-Language models consume selected portions of it.
-
-Tier Two — Specialized Computation Layer
-
-Tier Two contains heterogeneous computational resources optimized for different forms of reasoning.
-
-The Executive Kernel determines which computational substrate is appropriate for each task.
-
-Neural Inference Engines
-
+### Neural Inference Engines
 GPUs, NPUs, and future neural accelerators perform:
+- Language generation
+- Probabilistic reasoning
+- Multimodal inference
+- Pattern recognition
+- Creative synthesis
 
-language generation
-probabilistic reasoning
-pattern recognition
-multimodal inference
-creative synthesis
+These engines become specialised computational resources rather than executive controllers.
 
-These engines become specialized computational resources rather than executive controllers.
+### Symbolic Reasoning Engines
+Deterministic processors implemented through CPUs, ASICs, FPGAs, or future specialised hardware perform operations including:
+- Rule-based inference
+- Logical verification
+- Mathematical reasoning
+- Constraint satisfaction
+- Graph traversal
+- Expert systems
 
-Symbolic Reasoning Engines
+Rather than approximating these operations probabilistically, deterministic systems execute them directly whenever appropriate.
 
-Symbolic processors implemented through CPUs, ASICs, FPGAs, or future specialized hardware perform deterministic operations including:
+### Additional Computational Resources
+The architecture naturally extends to additional specialised resources, including:
+- Search systems
+- Optimisation engines
+- Planning algorithms
+- Simulation engines
+- Scientific computing platforms
+- Future specialised accelerators
 
-rule-based inference
-logical verification
-mathematical reasoning
-constraint satisfaction
-graph traversal
-expert systems
+The architecture is intentionally hardware-agnostic. It is organised around computational specialisation rather than particular technologies.
 
-Rather than approximating these operations probabilistically, deterministic engines execute them directly whenever appropriate.
+### Knowledge Infrastructure
+Persistent knowledge forms shared cognitive infrastructure owned by the Executive Kernel rather than another computational engine. Possible implementations include:
+- Semantic knowledge graphs
+- Structured key-value state
+- Relational databases
+- Vector indices where appropriate
+- Append-only episodic memory logs
 
-Additional Specialized Engines
+The Executive Kernel determines how these structures are maintained and queried. Computational engines consume information from them but do not own them.
 
-The architecture naturally extends to additional computational resources, including:
+### Execution Dispatch
+Not every task requires full orchestration. Simple conversational requests may be dispatched directly to a neural inference engine.
 
-search systems
-optimization engines
-simulation engines
-planning algorithms
-scientific computing
-future specialized accelerators
+More complex tasks may involve combinations of:
+- Retrieval
+- Symbolic verification
+- Optimisation
+- Planning
+- Simulation
+- Neural synthesis
 
-The architecture is intentionally hardware-agnostic.
+The Executive Kernel dynamically assembles the execution pipeline appropriate for each request.
 
-It is organized around computational specialization rather than specific technologies.
+---
 
-Knowledge Infrastructure
+## Translation and Trade-offs
 
-Persistent knowledge should not be viewed as another computational engine.
+Separating executive cognition from inference introduces new engineering challenges.
 
-Instead, it forms shared cognitive infrastructure owned by the Executive Kernel.
+Translating human language into structured cognitive state is itself imperfect. Rather than assuming perfect interpretation, the Executive Kernel evaluates confidence before modifying persistent state. When confidence is insufficient, the system requests clarification before committing changes.
 
-Possible implementations include:
-
-semantic knowledge graphs
-structured key-value state
-relational databases
-vector indices where appropriate
-append-only episodic logs
-
-The Executive Kernel determines how these structures are maintained and queried.
-
-Computational engines consume information from them but do not own them.
-
-Execution Dispatch
-
-Not every task requires full orchestration.
-
-Simple conversational requests may be dispatched directly to neural inference.
-
-More complex tasks may require:
-
-retrieval
-symbolic verification
-optimization
-planning
-neural synthesis
-
-The Executive Kernel dynamically assembles the appropriate execution pipeline for each request.
-
-Translation and Trade-offs
-
-Introducing deterministic executive control introduces new engineering challenges.
-
-Translating human language into structured cognitive state is itself an imperfect process.
-
-Rather than assuming perfect translation, the Executive Kernel evaluates confidence before modifying persistent state.
-
-When confidence is insufficient, the system requests clarification before committing changes.
-
-Likewise, front-loaded context compilation introduces modest initial overhead.
-
-However, this overhead may reduce repeated inference cycles, unnecessary computation, and human correction effort across longer interactions.
+Likewise, front-loaded context compilation introduces computational overhead. However, this overhead may reduce repeated inference cycles, unnecessary computation, repeated user corrections, and long-term conversational drift.
 
 These represent architectural hypotheses requiring empirical validation.
 
-Architectural Comparison
-Dimension	Monolithic LLM	Agentic Systems	Tiered Cognitive Architecture
-Executive Control	Neural model	Neural planner	Executive Cognitive Kernel
-Memory	Conversation transcript	RAG + transcripts	Structured cognitive state
-Context	Replay history	Replay plus retrieval	Compiled execution context
-Logic	Probabilistic	Probabilistic	Deterministic where appropriate
-Computation	Primarily neural	Primarily neural	Specialized heterogeneous computation
-System State	Ephemeral	Semi-persistent	Persistent and deterministic
-Conclusion
+---
 
-The history of AI has largely emphasized building increasingly capable models.
+## Architectural Comparison
 
-This proposal explores a complementary direction: building increasingly capable cognitive systems around those models.
+| Dimension | Monolithic LLM | Agentic Systems | Tiered Cognitive Architecture |
+| :--- | :--- | :--- | :--- |
+| **Executive Control** | Neural model | Neural planner | Executive Cognitive Kernel |
+| **Working Context** | Replay history | Replay + retrieval | Compiled execution context |
+| **Persistent State** | Conversation transcript | External memory | Structured cognitive state |
+| **Primary Reasoning** | Neural inference | Neural inference | Specialised heterogeneous computation |
+| **Computation** | Primarily neural | Primarily neural | Computational specialisation |
+| **System State** | Ephemeral | Semi-persistent | Persistent and deterministic |
 
-Rather than assuming every cognitive function belongs inside a language model, this architecture separates executive cognition from specialized computation.
+---
 
-Language models remain indispensable for probabilistic inference and natural language generation.
+## Research Questions
 
-They simply cease to function as the operating system of the AI.
+This proposal is intended as an architectural research agenda rather than a completed implementation. Key questions include:
 
-Whether this architecture ultimately proves superior is an empirical question.
+- Does compiled execution context reduce inference cost?
+- Does structured cognitive state improve long-horizon conversational coherence?
+- Can deterministic executive state reduce hallucination and conversational drift?
+- What execution-dispatch strategies provide the best trade-off between latency and capability?
+- How should context compilation be implemented and evaluated?
+- Does heterogeneous computation improve throughput, reliability, or infrastructure utilisation relative to predominantly neural execution?
 
-The purpose of this proposal is not to present a complete implementation, but to articulate an architectural principle for future exploration:
+These questions are empirical and should be evaluated experimentally.
 
-Intelligence emerges not from forcing every cognitive function through a single computational engine, but from coordinating specialized forms of computation through a persistent executive layer that compiles structured cognitive state into task-specific execution contexts.
+---
 
+## Conclusion
 
+The history of AI has largely focused on constructing increasingly capable models. This proposal explores a complementary direction: constructing increasingly capable cognitive systems around those models.
+
+Rather than assuming every cognitive function belongs inside a language model, the architecture separates executive cognition from specialised computation. Language models remain indispensable for probabilistic inference, pattern recognition, and natural language generation. They simply cease to function as the operating system of the AI.
+
+Whether this architecture ultimately proves superior is an empirical question. The contribution of this proposal is not a complete implementation but a different organising principle for AI systems:
+
+> **Working state should be an explicitly managed architectural resource rather than an emergent by-product of repeated neural inference.**
+
+If that principle proves correct, future advances in AI may come not only from building larger models, but from building cognitive architectures that coordinate specialised forms of computation through a persistent executive layer capable of compiling structured cognitive state into task-specific execution contexts.
