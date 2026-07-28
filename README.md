@@ -1,212 +1,207 @@
-# A Proposal for a Tiered Cognitive Architecture for AI Systems
+# A Tiered Cognitive Architecture for AI Systems
 
 ## Executive Summary
 
-Current AI systems are built around a remarkably capable computational engine: the large language model (LLM). As these systems have evolved, however, the language model has gradually assumed responsibility for functions extending well beyond probabilistic inference, including conversation state reconstruction, memory management, planning, constraint tracking, tool routing, and execution coordination.
+Current AI systems are built around a remarkably capable computational engine: the large language model (LLM). As these systems have evolved, the language model has gradually assumed responsibility for functions extending well beyond probabilistic inference — conversation state reconstruction, memory management, planning, constraint tracking, tool routing, and execution coordination.
 
-This concentration of responsibility forces fundamentally different classes of computation through the same probabilistic engine. The result is structural inefficiency: repeated reconstruction of conversational state, increasing computational cost, degradation over long interactions, and growing cognitive friction for users who must repeatedly correct incorrect assumptions or redirect the conversation.
+This concentration of responsibility forces fundamentally different classes of computation through the same probabilistic engine. The result is structural inefficiency: repeated reconstruction of conversational state, growing computational cost, degradation over long interactions, and mounting friction for users who must repeatedly correct incorrect assumptions or redirect the conversation.
 
-This proposal explores an alternative architectural direction.
+What follows is not an incremental refinement of today's agent frameworks. Today's frameworks — agents, wrappers, copilots — are patchwork: each improvises its own memory format, its own retry logic, its own notion of state, none of it composable, none of it auditable, none of it held to any shared invariant. That works well enough to demo. It does not work well enough to trust with decision-critical work.
 
-Rather than treating the language model as the operating system of an AI system, it proposes separating executive cognition from computational inference.
+The proposal here is architectural, not incremental: separate **executive cognition** from **inference**, and give the executive layer the discipline of an operating system — persistent, deterministic, versioned, auditable — rather than the discipline of a script holding a conversation together with tool calls.
 
-Executive cognition refers to the functions responsible for maintaining goals, managing working state, selecting relevant information, coordinating specialised computational resources, and integrating results into persistent knowledge. These functions are distinct from language generation or probabilistic reasoning and therefore need not rely on the same computational substrate.
+A single distinction runs underneath everything that follows: **conversation is not state — it is evidence from which state is inferred and maintained.** A transcript is one observation stream. The kernel's job is to maintain the durable cognitive state that the transcript is evidence *of* — goals, facts, preferences, open questions — not to treat the transcript itself as the thing to be remembered. This is what separates the proposal from "conversation memory": memory implies storing what was said; this architecture stores what is *true*, with the transcript demoted to input.
 
-The proposed architecture introduces a persistent Executive Cognitive Kernel that maintains structured cognitive state, compiles task-specific execution contexts, and dispatches work to specialised computational engines.
-
-> **Guiding Principle:**
-> Different classes of cognitive work should be performed by the computational substrate best suited to perform them.
+> **Guiding principle:** different classes of cognitive work should be performed by the computational substrate best suited to perform them — and the substrate that decides *which* work goes where must itself be deterministic, not another inference call.
 
 ---
 
-## The Current Architecture and Its Structural Limitations
+## Part I — The Problem
 
-Modern AI systems already consist of sophisticated infrastructure surrounding a language model, including CPUs, GPUs, retrieval systems, databases, serving engines, orchestration layers, safety systems, and external tools.
+### The current architecture and its structural limitations
 
-Despite this complexity, the language model frequently functions as the system's de facto executive controller. Each interaction reconstructs conversational state, interprets user intent, selects relevant information, performs planning, and generates responses through repeated neural inference.
+Modern AI systems already consist of sophisticated infrastructure surrounding a language model: CPUs, GPUs, retrieval systems, databases, serving engines, orchestration layers, safety systems, external tools. Despite this complexity, the language model frequently functions as the system's de facto executive controller. Each interaction reconstructs conversational state, interprets user intent, selects relevant information, performs planning, and generates a response — all through repeated neural inference.
 
-This proposal argues that many limitations commonly attributed to language models may instead arise from this architectural arrangement.
+Many of the limitations commonly attributed to language models may instead arise from this arrangement, not from the models themselves.
 
-### Reconstructing Working State
-Current systems repeatedly ask a probabilistic model to reconstruct its own working state from conversational history. Working state therefore becomes an inference by-product rather than an explicitly managed system resource. As conversations grow longer, reconstruction becomes increasingly expensive while simultaneously becoming more susceptible to ambiguity, outdated assumptions, and accumulated errors. This proposal instead treats working state as an architectural responsibility independent of model inference.
+**Reconstructing working state.** Systems repeatedly ask a probabilistic model to reconstruct its own working state from conversational history. Working state becomes an inference byproduct rather than an explicitly managed resource. As conversations grow longer, reconstruction becomes more expensive and more susceptible to ambiguity, outdated assumptions, and accumulated error.
 
-### Repeated Context Processing
-Conversation histories continually expand while much of their content becomes irrelevant to the current task. Although modern inference systems employ sophisticated optimisation techniques, repeatedly reconstructing state from growing conversational history remains an architectural overhead independent of any particular transformer implementation.
+**Repeated context processing.** Conversation histories continually expand while much of their content becomes irrelevant to the current task. Repeatedly reconstructing state from growing history is architectural overhead independent of any particular model implementation.
 
-### Context Degradation
-Long conversations naturally accumulate abandoned ideas, superseded assumptions, exploratory reasoning, and corrected mistakes. These elements may continue influencing subsequent inference despite no longer representing the desired cognitive state. Recovering often requires additional interactions whose primary purpose is correcting previous generations.
+**Context degradation.** Long conversations accumulate abandoned ideas, superseded assumptions, and corrected mistakes. These elements can continue influencing subsequent inference despite no longer representing the desired cognitive state — and recovering from this typically requires additional interactions whose sole purpose is correcting previous generations.
 
-### Human Productivity Cost
-The computational cost of repeated correction is only part of the problem. Users themselves become the debugging system. Every unnecessary correction interrupts concentration, pollutes conversational history, increases cognitive load, and reduces productivity.
+**Human productivity cost.** This is the part that matters most and is measured least. When bad state is committed silently, the user doesn't get pulled in for a quick confirmation — they get pulled in later, after the fact, to debug. That's expensive precisely because it's unstructured and delayed: the user has to first figure out *what* went wrong before they can even say the correction. Every unnecessary correction interrupts concentration, pollutes conversational history, and reduces productivity. The goal of a better architecture is not fewer questions to the user — it's moving the user's involvement from reactive debugging to a small, cheap, proactive confirmation, asked at the moment of uncertainty rather than several turns downstream.
 
----
+### Architectural comparison
 
-## Architectural Principle
-
-This proposal is not an incremental refinement of existing agentic architectures. Instead, it relocates executive cognition outside the probabilistic inference engine.
-
-Language generation, logical verification, planning, optimisation, retrieval, symbolic reasoning, memory organisation, and execution coordination represent different computational problems. They should not necessarily share the same computational mechanism.
-
-Rather than forcing every cognitive function through neural inference, the architecture assigns each class of computation to the substrate most naturally suited to perform it.
+| Dimension | Monolithic LLM | Agentic Systems (patchwork) | Tiered Cognitive Architecture |
+|---|---|---|---|
+| Executive Control | Neural model | Neural planner | Executive Cognitive Kernel |
+| Working Context | Replay history | Replay + retrieval | Compiled execution context |
+| Persistent State | Conversation transcript | External memory, ad hoc | Versioned, typed state graph |
+| Primary Reasoning | Neural inference | Neural inference | Specialised heterogeneous computation |
+| System State | Ephemeral | Semi-persistent | Persistent, deterministic, auditable |
+| Auditability | None | Inconsistent, per-framework | Structural — commit history is the audit trail |
 
 ---
 
-## Tier One: Executive Cognitive Kernel
+## Part II — The Architecture
 
-The Executive Cognitive Kernel functions as the persistent operating system of the cognitive architecture.
+### Compute placement: two tiers, not three
 
-Unlike today's stateless inference model, the Kernel maintains continuous cognitive state independently of any individual model invocation.
+At the infrastructure level, this is as much a workload-routing discipline as a software design. Most of what current systems route to large GPU-cluster inference is actually deterministic housekeeping — state lookups, conflict checks, routing decisions — that belongs on the CPU fleet, which is typically underutilized relative to the GPU cluster in the same facility. The architecture enforces that split rather than defaulting everything to the model because it's easier to prompt than to engineer a deterministic service.
 
-Its responsibilities include:
-- Maintaining persistent cognitive state
-- Tracking goals, projects, and objectives
-- Managing structured knowledge
-- Selecting relevant information
-- Compiling execution contexts
-- Dispatching specialised computation
-- Integrating returned results
-- Coordinating heterogeneous computational resources
+The one place the kernel needs a model at all — interpreting ambiguous natural-language input — does **not** constitute a third tier. It's a small, narrow, purpose-built model living inside the kernel's own footprint, co-located with the CPU tier rather than the large GPU cluster, serving the kernel's own executive function. It never produces user-facing output and never writes state directly; it only ever proposes a diff that the deterministic core gates.
 
-Importantly, the Executive Kernel is deterministic. Its purpose is not to perform every form of reasoning itself. Its purpose is to coordinate reasoning.
+- **Tier One (kernel)** — deterministic core plus a small embedded model for bounded translation tasks
+- **Tier Two (specialized computation)** — the large GPU cluster and other heavy engines, reserved for genuinely general-purpose or open-ended work, dispatched to by the kernel and never doing the kernel's own job
 
-This role is loosely analogous to executive function in biological cognition, which coordinates attention, working memory, and goal management without directly performing every specialised cognitive operation.
+### Tier One: The Executive Cognitive Kernel
 
-### Context Compilation
-Context compilation is the defining mechanism of the proposed architecture. The Executive Kernel does not replay conversations. It compiles context.
+The Executive Cognitive Kernel is the persistent operating system of the architecture. Unlike today's stateless inference model, it maintains continuous cognitive state independently of any individual model invocation. Its responsibilities: maintaining persistent state; tracking goals and objectives; selecting relevant information; compiling execution contexts; dispatching specialized computation; integrating returned results; coordinating heterogeneous resources.
 
-Rather than transmitting an entire conversational transcript to a language model, the Kernel constructs a minimal execution payload derived from structured cognitive state. Each payload contains only the information necessary to complete the current task. Temporary execution contexts are discarded after completion. Persistent cognitive state remains independent of model inference.
+The kernel is deterministic in its decision logic — commit gate, merge policy, routing — even though one of its internal components uses a small model as a sensor, much as a deterministic control system can incorporate a noisy sensor without the controller itself ceasing to be a controller. The kernel owns and gates the model's output; the model doesn't own any part of the kernel's function.
 
-This separates long-term knowledge from temporary working context while reducing computational overhead and preventing obsolete conversational history from unnecessarily influencing future reasoning.
+**1. State model.** Persistent cognitive state is a small typed graph, not a document.
 
-### Persistent Cognitive State
-Conversation transcripts are not treated as memory. Instead, the Executive Kernel maintains structured system state describing the current cognitive environment. Examples include:
-- User preferences
-- Established facts
-- Active projects
-- Current objectives
-- Unresolved questions
-- Hypotheses under evaluation
-- Procedural knowledge
-- Relationships between concepts
+- *Entities* — goals, facts, preferences, open questions, projects. Each has an ID, a confidence score, a timestamp, provenance (which turn or call produced it), and a status (active / superseded / retracted).
+- *Edges* — typed relationships: `supports`, `contradicts`, `supersedes`, `depends_on`. This makes drift and conflict detectable structurally, rather than something re-derived by re-reading history.
+- *Versioning* — the state graph is a git-like history, not an append log. Every accepted change is a **commit**: an atomic diff against a known parent state.
 
-The Executive Kernel owns this state. Computational engines consume selected portions of it.
+This layer is fully deterministic: schema validation, conflict detection, storage, retrieval. No model involved.
 
-### Context Compilation as a Research Problem
-Context compilation is itself a computational problem. This proposal defines its architectural role but intentionally does not prescribe a single implementation. Possible approaches may combine deterministic rules, learned retrieval policies, symbolic reasoning, probabilistic relevance estimation, semantic indexing, graph traversal, or future specialised algorithms.
+**Three kinds of memory, not two.** The pipeline from language to state implicitly spans three distinct layers, and keeping them named separately avoids blurring them into one undifferentiated "context":
 
-Determining the optimal compilation strategy remains an open area for empirical research rather than a fixed design assumption.
+- *Long-term semantic state* — the state graph itself: persistent facts, goals, projects, preferences. Durable across the life of the relationship with the user or system, changed only through commits.
+- *Working memory* — the current task's execution state: intermediate reasoning, scratchpad values, in-progress plans. Lives for the duration of a task, then is either promoted into long-term state (if durable) or discarded.
+- *Ephemeral inference context* — the actual compiled payload sent to a Tier Two model for a single call. Reconstructed per call from the other two layers, then thrown away.
 
----
+Conflating these — treating "what we send the model" as if it were the same thing as "what the system durably knows" — is exactly the blur that lets transcript replay masquerade as memory in current systems. Keeping them distinct is what makes the state graph authoritative rather than just another cache.
 
-## Tier Two: Specialised Computation Layer
+**2. Git-like operations as first-class primitives.** Taking the repository analogy literally adds three native operations:
 
-Tier Two consists of heterogeneous computational resources optimised for different classes of computation. The Executive Kernel determines which computational substrate is appropriate for each task.
+- *Revert* — undo a bad commit by rolling state back to the last known-good commit and replaying forward, rather than manually unwinding everything built on top of it. This is the direct fix for cascading errors: catching something late no longer means reconstructing what should have happened, it means checking out an earlier state.
+- *Branch* — when the ingestion pipeline is genuinely ambiguous between interpretations, the kernel doesn't have to force an immediate commit-or-ask decision. It holds both as parallel branches, proceeds on the higher-confidence one, and keeps the alternate available to switch to cheaply. This is a genuine third option between "commit" and "ask."
+- *Diff* — any two versions of the state graph can be compared directly, giving a structured answer to "when did this change and why" instead of requiring a re-read of transcript history. This is the debugging and audit tool for the rare cases something does go wrong.
 
-### Neural Inference Engines
-GPUs, NPUs, and future neural accelerators perform:
-- Language generation
-- Probabilistic reasoning
-- Multimodal inference
-- Pattern recognition
-- Creative synthesis
+**3. Ingestion pipeline (where language meets state).** This is the seam where translation from natural language to structured state happens — the hardest part, and the one that has to stay narrow:
 
-These engines become specialised computational resources rather than executive controllers.
+1. *Segmentation* (deterministic) — split the turn into candidate statements, questions, instructions.
+2. *Narrow classification/extraction* (the kernel's embedded model) — classify each candidate and extract structured slots, each with its own confidence score. Fixed schema, bounded output — not open-ended reasoning, and not a Tier Two workload.
+3. *Merge check* (deterministic) — attempt a three-way merge of the proposed diff against current state. A strict, non-contradictory extension auto-merges. A genuine conflict blocks the commit pending resolution — the same semantics as a merge conflict in source control, not a silent overwrite.
+4. *Commit gate* (deterministic policy) — decide: commit, branch, or escalate.
 
-### Symbolic Reasoning Engines
-Deterministic processors implemented through CPUs, ASICs, FPGAs, or future specialised hardware perform operations including:
-- Rule-based inference
-- Logical verification
-- Mathematical reasoning
-- Constraint satisfaction
-- Graph traversal
-- Expert systems
+Stage 2 never writes state directly. It only ever produces a proposed diff; the kernel decides whether to apply it.
 
-Rather than approximating these operations probabilistically, deterministic systems execute them directly whenever appropriate.
+**4. The commit gate — the actual center of the design.** It is tempting to treat the state graph as the contribution here; graph memories, event sourcing, and CRDTs already exist elsewhere. What's genuinely novel is the control policy sitting in front of the graph: **commit, branch, or ask** as a triage decision, replacing today's binary of *guess silently* or *always interrupt*. That third option — branch — is what makes this richer than either alternative: it acknowledges that not every ambiguity is worth a user's attention, and lets the system defer resolution until it's actually needed rather than paying an interruption cost up front or a correctness cost later. Rather than a fixed confidence cutoff, the gate weighs expected cost:
 
-### Additional Computational Resources
-The architecture naturally extends to additional specialised resources, including:
-- Search systems
-- Optimisation engines
-- Planning algorithms
-- Simulation engines
-- Scientific computing platforms
-- Future specialised accelerators
+```
+expected_cost(commit)  = P(wrong) × cost_of_late_correction
+expected_cost(branch)  = cost_of_maintaining_parallel_state
+expected_cost(ask)     = cost_of_one_question + fatigue_term(ask_frequency)
+```
 
-The architecture is intentionally hardware-agnostic. It is organised around computational specialisation rather than particular technologies.
+`cost_of_late_correction` is weighted heavily, since a wrong fact compounds by seeding further wrong inferences before it's caught — though atomic commits keep this cost lower than it would otherwise be, since the fix is a revert rather than a manual unwind. `branch` is the genuine middle option when ambiguity is real but neither guessing nor interrupting is clearly cheaper. `fatigue_term` guards against over-asking, which has its own real cost: users who are interrupted too often start reflexively confirming without reading, defeating the purpose.
 
-### Knowledge Infrastructure
-Persistent knowledge forms shared cognitive infrastructure owned by the Executive Kernel rather than another computational engine. Possible implementations include:
-- Semantic knowledge graphs
-- Structured key-value state
-- Relational databases
-- Vector indices where appropriate
-- Append-only episodic memory logs
+Escalation, when it happens, must be cheap by construction: closed-form questions, not open-ended ones; batched per turn, not one interruption per fact; default-and-confirm where a good guess exists. Even confident, auto-committed changes should be lightly surfaced, not silent — a passing-glance receipt costs nothing but catches misplaced confidence before it propagates. Timing matters as much as accuracy: the check happens at ingestion, synchronous with the turn, while the user still holds full context and correction is nearly free.
 
-The Executive Kernel determines how these structures are maintained and queried. Computational engines consume information from them but do not own them.
+**5. Context compilation.** The kernel does not replay conversations — it compiles context. A static, hand-authored mapping from task type to a fixed field list ("coding task pulls active project + recent decisions + open questions") is fragile: it retrieves what someone anticipated at design time, and silently omits anything relevant that the template's author didn't foresee — a dependency two hops away in the graph, connected by a relationship nobody wrote a rule for. That's a correctness failure, not just a cost problem, and it's distinct from every other failure mode in this design: nothing errors, the payload just quietly lacks something it needed.
 
-### Execution Dispatch
-Not every task requires full orchestration. Simple conversational requests may be dispatched directly to a neural inference engine.
+The fix is to use the graph structure the kernel already maintains, rather than a flat field list:
 
-More complex tasks may involve combinations of:
-- Retrieval
-- Symbolic verification
-- Optimisation
-- Planning
-- Simulation
-- Neural synthesis
+1. *Anchor* — deterministically identify the entities directly relevant to the task (the active project, the stated goal).
+2. *Traverse* — walk outward from the anchors along the typed edges already defined in the state model (`supports`, `contradicts`, `supersedes`, `depends_on`) to a bounded depth, rather than pulling a fixed list keyed on task type. A dependency two hops away surfaces automatically because the relationship is already encoded in the graph, not because a template author thought to include it.
+3. *Bound* — cap the traversal by depth and payload size, preserving the same cost control as before: the payload stays size-capped, just bounded by traversal radius instead of a static field list. This is still a fully deterministic graph query, not a model judging relevance.
 
-The Executive Kernel dynamically assembles the execution pipeline appropriate for each request.
+Traversal reduces the miss rate but won't eliminate it, so pair it with cheap, after-the-fact detection rather than relying on prevention alone: if a Tier Two response references an entity connected to the compiled payload's anchors but not included in it, that's a structural signal the traversal under-fetched — log it. The clearest signal of all is a user correction on a fact that already existed in the state graph but simply wasn't retrieved: that's a compilation miss, not an ingestion miss, and should feed back into recalibrating traversal depth and budget per task type — the same closed-loop discipline the ingestion classifier needs, applied to retrieval instead of extraction.
+
+**6. Dispatch.** A deterministic routing table maps task type to which Tier Two engine(s) get called. This is the boundary where work actually leaves the kernel's own footprint for the large-scale specialized compute layer — the embedded ingestion model never appears here, since it's internal to Tier One, not something the kernel dispatches to. Start as a plain lookup table; only promote entries to a learned router once failure data justifies it, since a large router model just re-creates the monolith one layer up.
+
+### Tier Two: Specialized Computation Layer
+
+Tier Two consists of heterogeneous resources optimized for different classes of computation, invoked only when a task genuinely requires them.
+
+- *Neural inference engines* (GPUs, NPUs, accelerators) — language generation, probabilistic reasoning, multimodal inference, creative synthesis.
+- *Symbolic reasoning engines* (CPUs, ASICs, FPGAs) — rule-based inference, logical verification, mathematical reasoning, constraint satisfaction, graph traversal.
+- *Additional resources* — search systems, optimization engines, planning algorithms, simulation engines, scientific computing platforms.
+
+The architecture is intentionally hardware-agnostic, organized around computational specialization rather than particular technologies. Persistent knowledge — semantic graphs, structured key-value state, relational stores, vector indices where appropriate — is owned by the kernel; Tier Two engines consume it but do not own it.
+
+Not every task requires full orchestration: simple conversational requests may be dispatched directly to a neural inference engine, while complex tasks assemble combinations of retrieval, symbolic verification, optimization, planning, simulation, and neural synthesis as the kernel determines.
+
+### Anticipated objections
+
+**"This is just event sourcing / CQRS / a knowledge graph / an operating system."** None of these comparisons are wrong individually, and none of them are the point. The proposal isn't inventing version control, graph storage, or workload scheduling — all of that exists. The claim is the synthesis: *version control should become the cognitive substrate beneath inference*, with a commit gate that treats language-derived facts the way source control treats code changes — attributable, reversible, mergeable — and with the language model demoted from manager to worker, dispatched by that substrate rather than running it. Individually familiar components, combined this way, are what's uncommon.
+
+**"Isn't the kernel just another bottleneck?"** No, for a specific reason: nearly all of the kernel's operations are deterministic graph queries, merges, indexing, and scheduling — not GPU inference. That class of workload scales horizontally the way databases and schedulers already do in production systems today. The bottleneck risk in current architectures is the opposite: forcing housekeeping work through a shared, contended, expensive GPU pool. Moving that work to commodity deterministic infrastructure relieves a bottleneck rather than creating one.
+
+### Translation and trade-offs
+
+Separating executive cognition from inference does not eliminate probabilistic judgment — it contains it. Translating human language into structured state is imperfect, and the ingestion pipeline's narrow classifier is where that imperfection lives. Rather than assuming perfect interpretation, the kernel evaluates confidence and blocks or escalates before committing changes it isn't confident about.
+
+Front-loaded context compilation and ingestion classification introduce their own overhead. The hypothesis is that this overhead is repaid many times over by eliminating repeated inference cycles, unnecessary computation, repeated user corrections, and long-term conversational drift — but this, like the compilation strategy itself, is an empirical claim requiring validation, not a given.
 
 ---
 
-## Translation and Trade-offs
+## Part III — Why Now
 
-Separating executive cognition from inference introduces new engineering challenges.
+Three forces are converging that make this the right moment to build this, not merely an interesting one:
 
-Translating human language into structured cognitive state is itself imperfect. Rather than assuming perfect interpretation, the Executive Kernel evaluates confidence before modifying persistent state. When confidence is insufficient, the system requests clarification before committing changes.
+**Energy is now the hard constraint.** Power draw and grid interconnect delays are gating datacenter buildout speed industry-wide. This architecture is one of the few levers that helps immediately, because it requires no new fabs or power plants — it's a routing discipline applied to compute that already exists. Deterministic housekeeping currently running on GPU clusters moves to the CPU tier, where it belongs, freeing real GPU headroom without adding a single chip.
 
-Likewise, front-loaded context compilation introduces computational overhead. However, this overhead may reduce repeated inference cycles, unnecessary computation, repeated user corrections, and long-term conversational drift.
+**Capital scrutiny is real and immediate.** IPOs and public-market attention mean unit economics — cost per inference, GPU utilization, idle capacity — get audited in a way they weren't when this was private, venture-funded experimentation. Cost discipline is no longer an unglamorous afterthought; it's a number analysts will ask about directly.
 
-These represent architectural hypotheses requiring empirical validation.
+**This is not a tradeoff against bigger models — it's what makes them pay off.** A frontier model running under this kernel isn't also asked to be an operating system: reconstructing state, tracking its own prior decisions, compensating for a polluted context. It spends its entire compute budget on what it's actually for. Every dollar invested in scaling the model converts more fully into capability, instead of a growing share going toward the model doing a job it was never the right substrate for. The kernel is what gives scaling headroom rather than competing with it.
+
+### Why this unlocks adoption, not just efficiency
+
+The deeper unlock is trust, not cost.
+
+Entire categories of enterprise use — healthcare, finance, legal, anything under real regulatory scrutiny — cannot adopt LLM-based systems for decision-critical work today, not because the models aren't capable, but because there is no way to produce what a regulator or auditor actually requires: a reconstructable account of what the system believed, when that belief was formed, what it was based on, and proof nothing was silently altered along the way.
+
+A conversation transcript is not that. A wrapper's ad hoc memory is not that. "The model said so" is not an audit trail — it's a liability.
+
+The kernel produces the audit trail as a structural byproduct of how it works, not as a compliance feature bolted on afterward: every state change is an atomic, attributable commit; contradictions are detected structurally instead of silently absorbed; nothing enters persistent state without passing a deterministic, inspectable gate. Diff and revert aren't conveniences here — they are literally what "show me what changed, when, why, and prove it's reversible" means in a regulated context. This cannot be retrofitted onto a patchwork of agents after the fact; it has to be true of the state layer from the start.
+
+And once it's a real substrate — a standard, not one team's convention — it stops being a patchwork of individually clever agents and becomes something other systems can build against. That is the difference between an interesting architecture and infrastructure real applications get built on: an ecosystem, not a pile of incompatible one-offs. That is the precondition for the industries currently locked out to say yes.
 
 ---
 
-## Architectural Comparison
+## Part IV — Open Questions and Risks
 
-| Dimension | Monolithic LLM | Agentic Systems | Tiered Cognitive Architecture |
-| :--- | :--- | :--- | :--- |
-| **Executive Control** | Neural model | Neural planner | Executive Cognitive Kernel |
-| **Working Context** | Replay history | Replay + retrieval | Compiled execution context |
-| **Persistent State** | Conversation transcript | External memory | Structured cognitive state |
-| **Primary Reasoning** | Neural inference | Neural inference | Specialised heterogeneous computation |
-| **Computation** | Primarily neural | Primarily neural | Computational specialisation |
-| **System State** | Ephemeral | Semi-persistent | Persistent and deterministic |
+This is an architectural research agenda, not a completed implementation. Key open questions, both empirical and engineering:
 
----
+- Does compiled execution context reduce inference cost in practice, and by how much relative to the overhead of maintaining the state graph itself?
+- Does structured, versioned state measurably improve long-horizon coherence relative to transcript replay?
+- **Confidence calibration drift** — narrow extractors' confidence scores need periodic recalibration against ground truth, or the commit gate quietly degrades.
+- **Traversal calibration** — bounded graph traversal reduces but doesn't eliminate incomplete context compilation; the miss-detection signal (Tier Two referencing an unfetched but connected entity, or a user correcting a fact that was already in state but not retrieved) needs to actually close the loop into adjusted traversal depth/budget, or misses will recur silently.
+- **Merge resolution policy** — auto-merging non-contradictory extensions is straightforward; genuine conflicts usually shouldn't resolve automatically and should escalate or branch rather than let the kernel guess.
+- **Branch lifecycle management** — parallel branches can't accumulate indefinitely; the design needs a policy for when an unresolved branch gets forced to a decision (time-based, task-based, or explicit user resolution).
+- **Schema evolution** — state schema should be extensible (typed/tagged properties) from the start, since new entity or relationship types will be needed and migrating live state is otherwise costly.
+- What execution-dispatch strategies provide the best trade-off between latency and capability, and when (if ever) does a learned router outperform a deterministic lookup table?
 
-## Research Questions
+These are empirical questions and should be evaluated experimentally, not assumed.
 
-This proposal is intended as an architectural research agenda rather than a completed implementation. Key questions include:
+### Experimental validation
 
-- Does compiled execution context reduce inference cost?
-- Does structured cognitive state improve long-horizon conversational coherence?
-- Can deterministic executive state reduce hallucination and conversational drift?
-- What execution-dispatch strategies provide the best trade-off between latency and capability?
-- How should context compilation be implemented and evaluated?
-- Does heterogeneous computation improve throughput, reliability, or infrastructure utilisation relative to predominantly neural execution?
+Each hypothesis above needs a baseline and a metric, not just a claim. A concrete evaluation methodology, testable against current systems:
 
-These questions are empirical and should be evaluated experimentally.
+| Hypothesis | Baseline | Metric |
+|---|---|---|
+| Compiled context reduces inference cost | Transcript replay | Tokens processed, GPU time, latency |
+| Versioned state improves coherence | Standard chat memory | Contradiction rate, recovery time after correction |
+| Commit gate reduces user effort | Auto-commit memory | Corrections per task, clarification-request rate, task completion time |
+| CPU/GPU separation improves utilization | Monolithic orchestration | GPU utilization, CPU utilization, cost per completed task |
+| Auditability improves traceability | Agent framework (ad hoc memory) | Time to identify the source of an incorrect decision |
+
+Note the human-productivity metrics in particular — corrections per task, downstream correction latency, time-to-recover from a bad assumption — since these are arguably better fits for this architecture's actual claims than throughput metrics like perplexity or raw token efficiency. The core argument of this proposal is about debugging cost, not just compute cost, and the evaluation methodology should measure what the proposal actually claims to fix.
 
 ---
 
 ## Conclusion
 
-The history of AI has largely focused on constructing increasingly capable models. This proposal explores a complementary direction: constructing increasingly capable cognitive systems around those models.
+The history of AI has focused on building increasingly capable models. This proposal is about building the cognitive system around them — one where working state is an explicitly managed architectural resource with the discipline of an operating system, not an emergent byproduct of repeated neural inference, and not another ad hoc layer improvised per application.
 
-Rather than assuming every cognitive function belongs inside a language model, the architecture separates executive cognition from specialised computation. Language models remain indispensable for probabilistic inference, pattern recognition, and natural language generation. They simply cease to function as the operating system of the AI.
+Every component required — versioned graph state, deterministic services, small embedded classifiers, workload-aware scheduling — is buildable with technology that already exists. What's missing is the discipline to build it as one coherent system rather than another wrapper, and the recognition that this is infrastructure, not a feature.
 
-Whether this architecture ultimately proves superior is an empirical question. The contribution of this proposal is not a complete implementation but a different organising principle for AI systems:
-
-> **Working state should be an explicitly managed architectural resource rather than an emergent by-product of repeated neural inference.**
-
-If that principle proves correct, future advances in AI may come not only from building larger models, but from building cognitive architectures that coordinate specialised forms of computation through a persistent executive layer capable of compiling structured cognitive state into task-specific execution contexts.
+The industry is racing on one axis: bigger models. The open ground is the other axis: the operating system underneath them, and the auditability that comes from doing it properly. Whoever builds it first gets a durable advantage that isn't easily copied by adding more GPUs — lower cost per task, less waste, and the trust that turns an impressive demo into a system a regulated enterprise can actually run.
