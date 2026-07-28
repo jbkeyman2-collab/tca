@@ -1,4 +1,170 @@
-# A Tiered Cognitive Architecture for AI Systems
+# The Missing Operating System for AI
+
+> **The Tiered Cognitive Architecture (TCA)** is a proposed operating system for AI systems that separates executive cognition from probabilistic inference, enabling AI that is more efficient, auditable, trustworthy, and scalable.
+
+---
+
+## Why This Exists
+
+Every generation of computing eventually reaches the point where faster hardware alone is no longer enough.
+
+The personal computer needed operating systems before it became a platform.
+
+The Internet needed TCP/IP before disconnected networks became a global network.
+
+Smartphones needed iOS and Android before they became ecosystems.
+
+Artificial intelligence is approaching the same moment.
+
+Today's AI systems are remarkably capable, but they still rely on architectures that repeatedly ask a language model to perform jobs it was never designed to do:
+
+- Reconstruct conversation state
+- Manage memory
+- Track goals
+- Coordinate tools
+- Route computation
+- Maintain consistency
+- Recover from previous mistakes
+
+These are executive functions.
+
+Not inference.
+
+---
+
+## The Core Idea
+
+The Tiered Cognitive Architecture begins with one simple observation:
+
+> **Conversation is not memory. Conversation is evidence.**
+
+Current AI systems often treat conversation history as their working memory.
+
+Instead, TCA maintains an explicit, persistent cognitive state that represents what the system actually knows.
+
+Conversation becomes evidence from which state is updated—not the state itself.
+
+The language model is no longer responsible for managing cognition.
+
+Instead:
+
+> **Cognition manages inference.**
+
+---
+
+## Why It Matters
+
+Separating executive cognition from inference changes more than performance.
+
+It changes trust.
+
+Instead of repeatedly reconstructing state from an ever-growing transcript, the architecture maintains:
+
+- Persistent cognitive state
+- Versioned knowledge
+- Explicit goals
+- Structured context
+- Deterministic execution
+- Auditable decision history
+
+Every change becomes attributable.
+
+Every contradiction becomes detectable.
+
+Every mistake becomes reversible.
+
+---
+
+## Better Economics
+
+Today's frontier models spend enormous computational resources performing deterministic housekeeping:
+
+- State reconstruction
+- Context management
+- Tool orchestration
+- Memory retrieval
+- Routing
+
+These tasks consume expensive inference resources despite requiring little or no probabilistic reasoning.
+
+TCA proposes moving deterministic executive work into a persistent cognitive kernel, allowing inference engines to focus on the work only they can perform.
+
+The goal is not to replace large language models.
+
+The goal is to let them spend their computational budget on intelligence instead of administration.
+
+---
+
+## A Platform, Not Another Framework
+
+Today's AI ecosystem resembles the early days of personal computing.
+
+Every framework invents its own memory.
+
+Every agent has its own orchestration.
+
+Every application defines its own conventions.
+
+The Tiered Cognitive Architecture proposes a common cognitive substrate.
+
+A stable executive kernel.
+
+A versioned state model.
+
+A deterministic interface between cognition and computation.
+
+That foundation allows specialized systems—medical, legal, financial, scientific, creative, or otherwise—to plug into the same architecture instead of reinventing cognition for every application.
+
+---
+
+## Repository Contents
+
+```
+README.md                     ← Start here
+/docs
+    Tiered_Cognitive_Architecture.md
+    Experimental_Roadmap.md
+    Prototype_Notes.md
+    Future_Papers/
+```
+
+---
+
+## Current Status
+
+This repository presents an architectural proposal rather than a finished implementation.
+
+The purpose is to establish the architecture, define its underlying principles, identify open research questions, and encourage discussion, experimentation, and eventual implementation.
+
+---
+
+## Read the Paper
+
+The complete architectural proposal is available here:
+
+**➡️ [Tiered Cognitive Architecture for AI Systems](docs/Tiered_Cognitive_Architecture.md)**
+
+---
+
+## Central Thesis
+
+The AI industry has focused on building increasingly capable models.
+
+This proposal argues that the next major advance may come from building the cognitive operating system around them.
+
+Rather than asking language models to perform every aspect of cognition, the Tiered Cognitive Architecture separates deterministic executive control from probabilistic inference, creating AI systems that are more efficient, more transparent, more auditable, and ultimately more trustworthy.
+
+---
+
+## License
+
+(Choose your preferred license.)
+
+---
+
+## Feedback
+
+Questions, critiques, implementation ideas, and discussion are welcome through GitHub Issues or Pull Requests.# A Tiered Cognitive Architecture for AI Systems
 
 ## Executive Summary
 
