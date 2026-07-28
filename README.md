@@ -117,19 +117,6 @@ That foundation allows specialized systems—medical, legal, financial, scientif
 
 ---
 
-## Repository Contents
-
-```
-README.md                     ← Start here
-/docs
-    Tiered_Cognitive_Architecture.md
-    Experimental_Roadmap.md
-    Prototype_Notes.md
-    Future_Papers/
-```
-
----
-
 ## Current Status
 
 This repository presents an architectural proposal rather than a finished implementation.
@@ -138,13 +125,6 @@ The purpose is to establish the architecture, define its underlying principles, 
 
 ---
 
-## Read the Paper
-
-The complete architectural proposal is available here:
-
-**➡️ [Tiered Cognitive Architecture for AI Systems](docs/Tiered_Cognitive_Architecture.md)**
-
----
 
 ## Central Thesis
 
@@ -156,11 +136,6 @@ Rather than asking language models to perform every aspect of cognition, the Tie
 
 ---
 
-## License
-
-(Choose your preferred license.)
-
----
 
 ## Feedback
 
@@ -311,7 +286,7 @@ The architecture is intentionally hardware-agnostic, organized around computatio
 
 Not every task requires full orchestration: simple conversational requests may be dispatched directly to a neural inference engine, while complex tasks assemble combinations of retrieval, symbolic verification, optimization, planning, simulation, and neural synthesis as the kernel determines. The precise decision procedure for multi-resource tasks — sequential, parallel, or conditional dispatch — remains an open design question, noted in Part IV.
 
-### Deployment: Tier Two as a driver interface, not a datacenter design
+### Deployment: Tier Two as a driver interface, 
 
 The kernel is an operating system. A real operating system kernel doesn't hand-implement behavior for every disk controller or network card on the market — it defines a **driver interface**: a fixed contract of what any given hardware or backend must expose, and lets a vendor- or platform-specific driver handle the messy reality underneath. Tier Two dispatch works the same way. The architecture defines the contract; how a *particular* deployment satisfies it is a driver's job, not the kernel's.
 
