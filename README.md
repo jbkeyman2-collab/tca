@@ -119,15 +119,46 @@ Traversal reduces the miss rate but won't eliminate it, so pair it with cheap, a
 
 ### Tier Two: Specialized Computation Layer
 
-Tier Two consists of heterogeneous resources optimized for different classes of computation, invoked only when a task genuinely requires them.
+Tier Two consists of heterogeneous resources optimized for different classes of computation, invoked only when a task genuinely requires them. The routing criterion, in principle, is not the task's surface-level type but whether **a deterministic procedure exists that can be verified correct independent of a model's judgment**. Where one exists, the task belongs there; where none exists, it stays with neural inference. What follows is a working inventory of resource categories, grouped by why each is worth routing to rather than left to a model to approximate.
 
-- *Neural inference engines* (GPUs, NPUs, accelerators) — language generation, probabilistic reasoning, multimodal inference, creative synthesis.
-- *Symbolic reasoning engines* (CPUs, ASICs, FPGAs) — rule-based inference, logical verification, mathematical reasoning, constraint satisfaction, graph traversal.
-- *Additional resources* — search systems, optimization engines, planning algorithms, simulation engines, scientific computing platforms.
+**Deterministic, formally verifiable procedures** — no reason to make a model guess at these:
+- *Arithmetic and symbolic math* — algebraic, statistical, and numerical computation, computed exactly rather than estimated.
+- *Constraint satisfaction / SAT / SMT solvers* — scheduling, resource allocation, "does a valid assignment exist given these rules," using mature solvers that can prove satisfiability rather than reason toward it step by step.
+- *Formal logic / theorem proving* — verifying that a set of statements is internally consistent, or that a conclusion follows from stated premises. Directly relevant to the kernel's own merge-conflict logic — "does fact B contradict fact A" is sometimes itself a small logic problem, not just a lookup.
+- *Graph algorithms* — shortest path, reachability, cycle detection, topological sort. Well-known exact algorithms, and a natural fit given the state graph is already graph-shaped.
+- *Digital signal processing* — audio, image, video, and sensor-stream processing (filtering, transforms, compression), using well-defined mathematical transformations (FFTs, convolutions, wavelets) with known, exact algorithms. Often backed by genuinely specialized hardware — DSP chips and signal-tuned FPGAs are a real, decades-old hardware category distinct from both general CPUs and GPUs. Worth noting: DSP work sometimes sits *upstream* of the kernel's language-based ingestion pipeline, not just alongside it as a dispatch target — raw audio or sensor input often needs deterministic preprocessing before it's in a form the ingestion pipeline can classify at all, meaning not every input starts as language.
+
+**Search, optimization, and simulation** — problems with a cost function or state space, not a language problem:
+- *Combinatorial optimization / operations research solvers* — route planning, packing, scheduling under constraints with a cost to minimize, not just a feasibility check.
+- *Search algorithms over structured spaces* — A*, Monte Carlo tree search, and similar, for problems with defined state spaces and transition rules.
+- *Simulation engines* — physics, discrete-event, or Monte Carlo simulation for "what would happen if" questions, as distinct from "what does the language imply."
+
+**Retrieval and indexing** — lookup problems, not reasoning problems:
+- *Vector similarity search* — finding semantically similar but structurally unconnected material, distinct from the typed-edge graph traversal used for context compilation; both are legitimate tools for different jobs.
+- *Full-text / structured query engines* — traditional database queries when the task is genuinely just "look this up."
+
+**Domain expert systems** — a distinct middle category, not fully deterministic in the DSP/solver sense but far more rule-governed than open-ended generation: codified professional knowledge such as statutory logic, clinical guidelines, drug-interaction tables, actuarial tables, or tax code. These are better served by a maintained, versioned rules engine or certified decision-support system than by a general model improvising from training data — which is exactly the hallucination risk that makes regulated industries distrust general inference for this kind of question in the first place. Routing to a domain engine requires its own classification step (is this task legal, medical, or otherwise domain-specific), handled the same way as any other uncertain judgment call in this architecture — a confidence-gated proposal from the narrow classifier, escalating when unclear, rather than a silent guess. The payoff is concrete: when a decision touches a regulated domain, the audit trail shows exactly which certified engine handled it, under which version and ruleset — not "a language model inferred something."
+
+**Neural inference** — still the right tool where no deterministic procedure exists: open-ended generation, synthesis, style, creative work, and the ambiguous natural-language judgment calls the ingestion classifier itself performs.
 
 The architecture is intentionally hardware-agnostic, organized around computational specialization rather than particular technologies. Persistent knowledge — semantic graphs, structured key-value state, relational stores, vector indices where appropriate — is owned by the kernel; Tier Two engines consume it but do not own it.
 
-Not every task requires full orchestration: simple conversational requests may be dispatched directly to a neural inference engine, while complex tasks assemble combinations of retrieval, symbolic verification, optimization, planning, simulation, and neural synthesis as the kernel determines.
+Not every task requires full orchestration: simple conversational requests may be dispatched directly to a neural inference engine, while complex tasks assemble combinations of retrieval, symbolic verification, optimization, planning, simulation, and neural synthesis as the kernel determines. The precise decision procedure for multi-resource tasks — sequential, parallel, or conditional dispatch — remains an open design question, noted in Part IV.
+
+### Deployment: Tier Two as a driver interface, not a datacenter design
+
+The kernel is an operating system. A real operating system kernel doesn't hand-implement behavior for every disk controller or network card on the market — it defines a **driver interface**: a fixed contract of what any given hardware or backend must expose, and lets a vendor- or platform-specific driver handle the messy reality underneath. Tier Two dispatch works the same way. The architecture defines the contract; how a *particular* deployment satisfies it is a driver's job, not the kernel's.
+
+This is a deliberate scope boundary, not an omission. Everything about how a specific inference stack batches requests, caches state, disaggregates prefill from decode, or offloads memory is platform-specific detail that belongs inside a driver implementation — it should never need to be re-litigated in the kernel's design just because the deployment target changes. The same kernel — same state graph, same commit gate, same context compilation — should sit as comfortably in front of a large distributed GPU cluster as in front of a single local model running on a home machine talking to one user with no batching and no distributed anything at all. If the architecture only makes sense assuming one specific deployment shape, it isn't a kernel design — it's that deployment's design wearing a kernel's name. Working for both is the actual test of whether the abstraction is at the right level.
+
+**The driver contract, at minimum, needs to define:**
+
+- How a compiled payload (the kernel's stable-state/volatile-task-context structure) is handed to the backend for execution.
+- What the driver reports back — did it hit a cache, how long did execution take, did anything need to be evicted — so the kernel can adapt its own behavior without needing to know *why* a particular backend behaves the way it does.
+- What latency and consistency guarantees the kernel can assume from any driver, at minimum, so dispatch and scheduling logic can be written once against the contract rather than once per backend.
+- How a driver signals its own capacity or backpressure, so the kernel doesn't assume unlimited throughput from something that may be a single shared machine.
+
+**Everything from the earlier datacenter-specific discussion still matters — just relocated.** Prefix-cache compatibility (structuring durable state so it's addressable by a stable key, letting cache invalidation track real state changes rather than arbitrary re-serialization), batching-latency consistency, disaggregated prefill/decode alignment, KV-offload interaction, and shard/partition strategy for the state graph are all real considerations — but they're properties a *specific driver* needs to get right for its specific backend, not properties the kernel's own design needs to solve in the abstract. A datacenter driver and a home-machine driver will satisfy the same contract very differently, and that's exactly the point: the kernel doesn't need to know which one it's talking to.
 
 ### Anticipated objections
 
@@ -165,6 +196,14 @@ The kernel produces the audit trail as a structural byproduct of how it works, n
 
 And once it's a real substrate — a standard, not one team's convention — it stops being a patchwork of individually clever agents and becomes something other systems can build against. That is the difference between an interesting architecture and infrastructure real applications get built on: an ecosystem, not a pile of incompatible one-offs. That is the precondition for the industries currently locked out to say yes.
 
+### An ecosystem, not a framework
+
+The driver interface (see Part II) isn't just an implementation convenience — it's what makes durable third-party investment possible in a way today's agent landscape doesn't. Right now, a legal-tech or medical-device company that wants to plug domain expertise into an LLM system has nothing stable to build against — they'd be integrating against one team's bespoke agent framework, which can change under them at any time, is uncertified, and isn't auditable in a way their own regulators would accept. There's no foundation, so nobody commits serious engineering — let alone silicon — investment on top of it.
+
+A fixed driver contract changes that calculation. If the interface is published and stable — what a payload looks like going in, what's expected coming back out, how versioning and audit trail work — a domain expert or hardware vendor can build against a stable target with the same confidence a peripheral manufacturer has building a driver for an operating system: they aren't betting on one company's product roadmap, they're building against a published interface. That's what justifies real capital investment — a certified legal-reasoning engine, a clinical-decision-support system, an ASIC tuned for medical image analysis — sold as pluggable, independently audited add-ons rather than another prompt-engineered wrapper.
+
+This is also the sharpest form of the strategic argument for building this first: the advantage isn't just a faster or cheaper system, it's **defining the interface everyone else builds against.** That's a more durable position than winning on model quality alone, because it compounds as third parties commit their own capital to the ecosystem — an advantage a competitor can't erase just by shipping a marginally better model next quarter.
+
 ---
 
 ## Part IV — Open Questions and Risks
@@ -179,6 +218,8 @@ This is an architectural research agenda, not a completed implementation. Key op
 - **Branch lifecycle management** — parallel branches can't accumulate indefinitely; the design needs a policy for when an unresolved branch gets forced to a decision (time-based, task-based, or explicit user resolution).
 - **Schema evolution** — state schema should be extensible (typed/tagged properties) from the start, since new entity or relationship types will be needed and migrating live state is otherwise costly.
 - What execution-dispatch strategies provide the best trade-off between latency and capability, and when (if ever) does a learned router outperform a deterministic lookup table?
+- **Multi-resource dispatch order** — when a task needs more than one Tier Two resource (e.g. verification then generation, or several in parallel with merged results), what determines the sequencing — fixed per task type, conditional on intermediate results, or something else? Currently unspecified.
+- **Domain classification for expert-system routing** — deciding whether a task belongs to a regulated domain (legal, medical) is a higher-stakes version of the same judgment-call problem as general ingestion classification. Whether it needs its own dedicated classifier, its own confidence thresholds, or can reuse the existing ingestion pipeline is an open design question.
 
 These are empirical questions and should be evaluated experimentally, not assumed.
 
