@@ -3,7 +3,7 @@ If Unix was the operating system for computers this proposal asks a simple quest
 > **The Tiered Cognitive Architecture (TCA)** is a proposed operating system for AI systems that separates executive cognition from probabilistic inference, enabling AI that is more efficient, auditable, trustworthy, and scalable. 
 
 ---
-If Unix was the operating system for computers, and TCP/IP was the operating system for networks, this proposal asks a simple question: What should the operating system for AI look like?
+
 ## Why This Exists
 
 Every generation of computing eventually reaches the point where faster hardware alone is no longer enough.
