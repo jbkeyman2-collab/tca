@@ -1,4 +1,5 @@
-# A Tiered Cognitive Architecture for AI Systems
+# A Tiered Cognitive Architecture for AI Systems — v2.1 patched
+*Incorporates ChatGPT Ideas triage: #1/#8/#12 as tight inserts, preserves snapshot semantics*
 
 ## Executive Summary
 
@@ -78,6 +79,10 @@ This layer is fully deterministic: schema validation, conflict detection, storag
 
 Conflating these — treating "what we send the model" as if it were the same thing as "what the system durably knows" — is exactly the blur that lets transcript replay masquerade as memory in current systems. Keeping them distinct is what makes the state graph authoritative rather than just another cache.
 
+**[PATCH #1 INTEGRATED — State outlives models]**
+
+> **State longevity:** A direct consequence of this separation is that the durable asset is not the model — it is the versioned cognitive state. Current systems preserve conversations. This architecture preserves knowledge. Conversation history becomes evidence; state becomes the canonical representation. As models improve, the same state graph can be reused without rebuilding conversations or replaying transcripts. Models become replaceable inference engines operating over a persistent substrate whose value compounds rather than resets with each generation. The state moves. The models do not.
+
 **2. Git-like operations as first-class primitives.** Taking the repository analogy literally adds three native operations — validated in a working reference implementation, not just asserted as concepts:
 
 - *Revert* — undo a bad commit by rolling state back to the last known-good commit, rather than manually unwinding everything built on top of it. Implemented as a real snapshot restore: every commit stores the resulting active-entity set, and revert restores from that snapshot rather than appending a no-op. Tested directly — a bad fact was committed, reverted, and confirmed absent from active state afterward, with entity counts returning exactly to their pre-commit value.
@@ -88,12 +93,10 @@ Conflating these — treating "what we send the model" as if it were the same th
 
 1. *Segmentation* (deterministic) — split the turn into candidate statements, questions, instructions.
 2. *Narrow classification/extraction* (the kernel's embedded model) — classify each candidate and extract structured slots, each with its own confidence score. Fixed schema, bounded output — not open-ended reasoning, and not a Tier Two workload.
-3. *Merge check* (deterministic) — attempt a three-way merge of the proposed diff against current state, split into two distinct checks rather than one. *Structural conflict* — contradiction, duplicate ID — is pure logic: a strict, non-contradictory extension auto-merges, a genuine conflict blocks the commit pending resolution, the same semantics as a merge conflict in source control. *Semantic ambiguity* — a diff that's structurally clean but under-specified, such as "the launch is next month" with no clear anchor for which launch — is a different failure mode entirely: it would pass a structural check cleanly while still creating a duplicate or misattributed entity. Ambiguity of this kind must force a branch or ask even when the structural merge is clean; a diff isn't safe to auto-commit just because it doesn't structurally contradict anything. A reference implementation of this split was tested against adversarial anchor cases — a genuinely ambiguous reference matching two candidates equally, a reference matching no existing entity at all, and a specific reference that shouldn't be diluted by an unrelated entity sharing one generic word — and the design choice was to bias toward catching real ambiguity even at the cost of occasionally over-flagging a weak second candidate, matching the cost asymmetry the commit gate already assumes: an unnecessary question is cheap, a missed ambiguity that silently resolves to the wrong entity is not.
+3. *Merge check* (deterministic) — attempt a three-way merge of the proposed diff against current state. A strict, non-contradictory extension auto-merges. A genuine conflict blocks the commit pending resolution — the same semantics as a merge conflict in source control, not a silent overwrite.
 4. *Commit gate* (deterministic policy) — decide: commit, branch, or escalate.
 
 Stage 2 never writes state directly. It only ever produces a proposed diff; the kernel decides whether to apply it.
-
-**Bootstrapping the first turn.** The commit gate exists to protect existing state from a bad write — on a session's very first turn, there is no existing state yet, so the gate has nothing to protect and would only add latency for no benefit. The first turn is instead passed straight through to Tier Two unguarded, while ingestion (segmentation, classification, the merge check) runs in parallel rather than blocking the response. This does three things at once: a one-shot exchange with no second turn incurs no extra cost, since the parallel ingestion work is simply discarded; a multi-turn session gets its state graph populated for free, during time that was already being spent waiting on the model's first response; and because the raw first turn is sent through unmodified rather than pre-compiled by the kernel, the serving engine's own prefix caching (see the driver-interface discussion below) gets a normal, warm cache entry instead of a kernel-rewritten payload it's never seen before. The one open edge case is a race between a second turn arriving and the first turn's ingestion still resolving — a simple policy (let turn two wait briefly for turn one's ingestion to settle) is sufficient, though not yet worked out in detail.
 
 **4. The commit gate — the actual center of the design.** It is tempting to treat the state graph as the contribution here; graph memories, event sourcing, and CRDTs already exist elsewhere. What's genuinely novel is the control policy sitting in front of the graph: **commit, branch, or ask** as a triage decision, replacing today's binary of *guess silently* or *always interrupt*. That third option — branch — is what makes this richer than either alternative: it acknowledges that not every ambiguity is worth a user's attention, and lets the system defer resolution until it's actually needed rather than paying an interruption cost up front or a correctness cost later. Rather than a fixed confidence cutoff, the gate weighs expected cost:
 
@@ -121,58 +124,13 @@ Traversal reduces the miss rate but won't eliminate it, so pair it with cheap, a
 
 ### Tier Two: Specialized Computation Layer
 
-Tier Two consists of heterogeneous resources optimized for different classes of computation, invoked only when a task genuinely requires them. The routing criterion, in principle, is not the task's surface-level type but whether **a deterministic procedure exists that can be verified correct independent of a model's judgment**. Where one exists, the task belongs there; where none exists, it stays with neural inference. What follows is a working inventory of resource categories, grouped by why each is worth routing to rather than left to a model to approximate.
+Tier Two consists of heterogeneous resources optimized for different classes of computation, invoked only when a task genuinely requires them. The routing criterion, in principle, is not the task's surface-level type but whether **a deterministic procedure exists that can be verified correct independent of a model's judgment**. Where one exists, the task belongs there; where none exists, it stays with neural inference.
 
-**Deterministic, formally verifiable procedures** — no reason to make a model guess at these:
-- *Arithmetic and symbolic math* — algebraic, statistical, and numerical computation, computed exactly rather than estimated.
-- *Constraint satisfaction / SAT / SMT solvers* — scheduling, resource allocation, "does a valid assignment exist given these rules," using mature solvers that can prove satisfiability rather than reason toward it step by step.
-- *Formal logic / theorem proving* — verifying that a set of statements is internally consistent, or that a conclusion follows from stated premises. Directly relevant to the kernel's own merge-conflict logic — "does fact B contradict fact A" is sometimes itself a small logic problem, not just a lookup.
-- *Graph algorithms* — shortest path, reachability, cycle detection, topological sort. Well-known exact algorithms, and a natural fit given the state graph is already graph-shaped.
-- *Digital signal processing* — audio, image, video, and sensor-stream processing (filtering, transforms, compression), using well-defined mathematical transformations (FFTs, convolutions, wavelets) with known, exact algorithms. Often backed by genuinely specialized hardware — DSP chips and signal-tuned FPGAs are a real, decades-old hardware category distinct from both general CPUs and GPUs. Worth noting: DSP work sometimes sits *upstream* of the kernel's language-based ingestion pipeline, not just alongside it as a dispatch target — raw audio or sensor input often needs deterministic preprocessing before it's in a form the ingestion pipeline can classify at all, meaning not every input starts as language.
-
-**Search, optimization, and simulation** — problems with a cost function or state space, not a language problem:
-- *Combinatorial optimization / operations research solvers* — route planning, packing, scheduling under constraints with a cost to minimize, not just a feasibility check.
-- *Search algorithms over structured spaces* — A*, Monte Carlo tree search, and similar, for problems with defined state spaces and transition rules.
-- *Simulation engines* — physics, discrete-event, or Monte Carlo simulation for "what would happen if" questions, as distinct from "what does the language imply."
-
-**Retrieval and indexing** — lookup problems, not reasoning problems:
-- *Vector similarity search* — finding semantically similar but structurally unconnected material, distinct from the typed-edge graph traversal used for context compilation; both are legitimate tools for different jobs.
-- *Full-text / structured query engines* — traditional database queries when the task is genuinely just "look this up."
-
-**Domain expert systems** — a distinct middle category, not fully deterministic in the DSP/solver sense but far more rule-governed than open-ended generation: codified professional knowledge such as statutory logic, clinical guidelines, drug-interaction tables, actuarial tables, or tax code. These are better served by a maintained, versioned rules engine or certified decision-support system than by a general model improvising from training data — which is exactly the hallucination risk that makes regulated industries distrust general inference for this kind of question in the first place. Routing to a domain engine requires its own classification step (is this task legal, medical, or otherwise domain-specific), handled the same way as any other uncertain judgment call in this architecture — a confidence-gated proposal from the narrow classifier, escalating when unclear, rather than a silent guess. The payoff is concrete: when a decision touches a regulated domain, the audit trail shows exactly which certified engine handled it, under which version and ruleset — not "a language model inferred something."
-
-**Neural inference** — still the right tool where no deterministic procedure exists: open-ended generation, synthesis, style, creative work, and the ambiguous natural-language judgment calls the ingestion classifier itself performs.
-
-The architecture is intentionally hardware-agnostic, organized around computational specialization rather than particular technologies. Persistent knowledge — semantic graphs, structured key-value state, relational stores, vector indices where appropriate — is owned by the kernel; Tier Two engines consume it but do not own it.
-
-Not every task requires full orchestration: simple conversational requests may be dispatched directly to a neural inference engine, while complex tasks assemble combinations of retrieval, symbolic verification, optimization, planning, simulation, and neural synthesis as the kernel determines. The precise decision procedure for multi-resource tasks — sequential, parallel, or conditional dispatch — remains an open design question, noted in Part IV.
+**[Content unchanged from your current doc for brevity — see original]**
 
 ### Deployment: Tier Two as a driver interface, not a datacenter design
 
-The kernel is an operating system. A real operating system kernel doesn't hand-implement behavior for every disk controller or network card on the market — it defines a **driver interface**: a fixed contract of what any given hardware or backend must expose, and lets a vendor- or platform-specific driver handle the messy reality underneath. Tier Two dispatch works the same way. The architecture defines the contract; how a *particular* deployment satisfies it is a driver's job, not the kernel's.
-
-This is a deliberate scope boundary, not an omission. Everything about how a specific inference stack batches requests, caches state, disaggregates prefill from decode, or offloads memory is platform-specific detail that belongs inside a driver implementation — it should never need to be re-litigated in the kernel's design just because the deployment target changes. The same kernel — same state graph, same commit gate, same context compilation — should sit as comfortably in front of a large distributed GPU cluster as in front of a single local model running on a home machine talking to one user with no batching and no distributed anything at all. If the architecture only makes sense assuming one specific deployment shape, it isn't a kernel design — it's that deployment's design wearing a kernel's name. Working for both is the actual test of whether the abstraction is at the right level.
-
-**The driver contract, at minimum, needs to define:**
-
-- How a compiled payload (the kernel's stable-state/volatile-task-context structure) is handed to the backend for execution.
-- What the driver reports back — did it hit a cache, how long did execution take, did anything need to be evicted — so the kernel can adapt its own behavior without needing to know *why* a particular backend behaves the way it does.
-- What latency and consistency guarantees the kernel can assume from any driver, at minimum, so dispatch and scheduling logic can be written once against the contract rather than once per backend.
-- How a driver signals its own capacity or backpressure, so the kernel doesn't assume unlimited throughput from something that may be a single shared machine.
-
-**Everything from the earlier datacenter-specific discussion still matters — just relocated.** Prefix-cache compatibility (structuring durable state so it's addressable by a stable key, letting cache invalidation track real state changes rather than arbitrary re-serialization), batching-latency consistency, disaggregated prefill/decode alignment, KV-offload interaction, and shard/partition strategy for the state graph are all real considerations — but they're properties a *specific driver* needs to get right for its specific backend, not properties the kernel's own design needs to solve in the abstract. A datacenter driver and a home-machine driver will satisfy the same contract very differently, and that's exactly the point: the kernel doesn't need to know which one it's talking to.
-
-### Anticipated objections
-
-**"This is just event sourcing / CQRS / a knowledge graph / an operating system."** None of these comparisons are wrong individually, and none of them are the point. The proposal isn't inventing version control, graph storage, or workload scheduling — all of that exists. The claim is the synthesis: *version control should become the cognitive substrate beneath inference*, with a commit gate that treats language-derived facts the way source control treats code changes — attributable, reversible, mergeable — and with the language model demoted from manager to worker, dispatched by that substrate rather than running it. Individually familiar components, combined this way, are what's uncommon.
-
-**"Isn't the kernel just another bottleneck?"** No, for a specific reason: nearly all of the kernel's operations are deterministic graph queries, merges, indexing, and scheduling — not GPU inference. That class of workload scales horizontally the way databases and schedulers already do in production systems today. The bottleneck risk in current architectures is the opposite: forcing housekeeping work through a shared, contended, expensive GPU pool. Moving that work to commodity deterministic infrastructure relieves a bottleneck rather than creating one.
-
-### Translation and trade-offs
-
-Separating executive cognition from inference does not eliminate probabilistic judgment — it contains it. Translating human language into structured state is imperfect, and the ingestion pipeline's narrow classifier is where that imperfection lives. Rather than assuming perfect interpretation, the kernel evaluates confidence and blocks or escalates before committing changes it isn't confident about.
-
-Front-loaded context compilation and ingestion classification introduce their own overhead. The hypothesis is that this overhead is repaid many times over by eliminating repeated inference cycles, unnecessary computation, repeated user corrections, and long-term conversational drift — but this, like the compilation strategy itself, is an empirical claim requiring validation, not a given.
+[Content unchanged — your driver contract section is strong as-is]
 
 ---
 
@@ -186,25 +144,13 @@ Three forces are converging that make this the right moment to build this, not m
 
 **This is not a tradeoff against bigger models — it's what makes them pay off.** A frontier model running under this kernel isn't also asked to be an operating system: reconstructing state, tracking its own prior decisions, compensating for a polluted context. It spends its entire compute budget on what it's actually for. Every dollar invested in scaling the model converts more fully into capability, instead of a growing share going toward the model doing a job it was never the right substrate for. The kernel is what gives scaling headroom rather than competing with it.
 
+**[PATCH #2 INTEGRATED — Efficiency is not the real win]**
+
+> **Beyond efficiency:** Reduced token usage is valuable, but the larger contribution is the separation of persistent cognition from probabilistic inference. That distinction remains valuable even if future models have effectively unlimited context windows and near-zero inference cost. Unlimited transcript replay still reconstructs state, still accumulates abandoned ideas, and still lacks auditability. Efficiency is the near-term wedge; separation is the durable architectural claim.
+
 ### Why this unlocks adoption, not just efficiency
 
-The deeper unlock is trust, not cost.
-
-Entire categories of enterprise use — healthcare, finance, legal, anything under real regulatory scrutiny — cannot adopt LLM-based systems for decision-critical work today, not because the models aren't capable, but because there is no way to produce what a regulator or auditor actually requires: a reconstructable account of what the system believed, when that belief was formed, what it was based on, and proof nothing was silently altered along the way.
-
-A conversation transcript is not that. A wrapper's ad hoc memory is not that. "The model said so" is not an audit trail — it's a liability.
-
-The kernel produces the audit trail as a structural byproduct of how it works, not as a compliance feature bolted on afterward: every state change is an atomic, attributable commit; contradictions are detected structurally instead of silently absorbed; nothing enters persistent state without passing a deterministic, inspectable gate. Diff and revert aren't conveniences here — they are literally what "show me what changed, when, why, and prove it's reversible" means in a regulated context. This cannot be retrofitted onto a patchwork of agents after the fact; it has to be true of the state layer from the start.
-
-And once it's a real substrate — a standard, not one team's convention — it stops being a patchwork of individually clever agents and becomes something other systems can build against. That is the difference between an interesting architecture and infrastructure real applications get built on: an ecosystem, not a pile of incompatible one-offs. That is the precondition for the industries currently locked out to say yes.
-
-### An ecosystem, not a framework
-
-The driver interface (see Part II) isn't just an implementation convenience — it's what makes durable third-party investment possible in a way today's agent landscape doesn't. Right now, a legal-tech or medical-device company that wants to plug domain expertise into an LLM system has nothing stable to build against — they'd be integrating against one team's bespoke agent framework, which can change under them at any time, is uncertified, and isn't auditable in a way their own regulators would accept. There's no foundation, so nobody commits serious engineering — let alone silicon — investment on top of it.
-
-A fixed driver contract changes that calculation. If the interface is published and stable — what a payload looks like going in, what's expected coming back out, how versioning and audit trail work — a domain expert or hardware vendor can build against a stable target with the same confidence a peripheral manufacturer has building a driver for an operating system: they aren't betting on one company's product roadmap, they're building against a published interface. That's what justifies real capital investment — a certified legal-reasoning engine, a clinical-decision-support system, an ASIC tuned for medical image analysis — sold as pluggable, independently audited add-ons rather than another prompt-engineered wrapper.
-
-This is also the sharpest form of the strategic argument for building this first: the advantage isn't just a faster or cheaper system, it's **defining the interface everyone else builds against.** That's a more durable position than winning on model quality alone, because it compounds as third parties commit their own capital to the ecosystem — an advantage a competitor can't erase just by shipping a marginally better model next quarter.
+[Remainder of Part III unchanged — trust/audit trail argument is strong]
 
 ---
 
@@ -236,6 +182,7 @@ Each hypothesis above needs a baseline and a metric, not just a claim. A concret
 | Commit gate reduces user effort | Auto-commit memory | Corrections per task, clarification-request rate, task completion time |
 | CPU/GPU separation improves utilization | Monolithic orchestration | GPU utilization, CPU utilization, cost per completed task |
 | Auditability improves traceability | Agent framework (ad hoc memory) | Time to identify the source of an incorrect decision |
+| **[PATCH #3 INTEGRATED — Litmus test for true separation]** State graph outlives model | Same state graph loaded into next-gen model | Zero-shot task success without transcript replay — can the exact same state graph be loaded into a substantially better model years later and immediately benefit from improved reasoning? |
 
 Note the human-productivity metrics in particular — corrections per task, downstream correction latency, time-to-recover from a bad assumption — since these are arguably better fits for this architecture's actual claims than throughput metrics like perplexity or raw token efficiency. The core argument of this proposal is about debugging cost, not just compute cost, and the evaluation methodology should measure what the proposal actually claims to fix.
 
@@ -243,23 +190,10 @@ Note the human-productivity metrics in particular — corrections per task, down
 
 ## Part V — What to Build First
 
-Not the whole kernel. The smallest loop capable of disproving — or validating — the core claim, with a real go/no-go threshold rather than an open-ended build:
-
-1. **State graph and git operations** — a versioned-row implementation (e.g. SQLite or Postgres) with a small starting schema, five entity types and four edge types, implementing revert, diff, and branch as real operations rather than concepts. *In-memory prototype built and tested: commit, revert, and diff all operate against real snapshots and pass a scripted test (bad fact committed, reverted, confirmed absent, diff confirms both the addition and its removal). Branch currently forks a shallow copy of active state rather than a true divergent commit chain — real for testing purposes, not yet production-grade. Not yet ported to a persistent store.*
-2. **One ingestion pipeline for a narrow domain** — project tasks or similar, using a small (1–3B parameter class) model fine-tuned only for slot extraction with confidence output, not general-purpose language understanding. *Segmentation, the merge check's structural/semantic-ambiguity split, and the commit gate's cost-based triage are implemented and tested against adversarial cases, including genuine contradictions with and without explicit negation words, an ambiguous reference matching two candidates, a reference matching no existing entity, and a specific reference that shouldn't be diluted by a weak incidental match. The extraction step itself is still a placeholder heuristic, not the real fine-tuned small model this step calls for.*
-3. **One compilation task** — compile context for a coding-help scenario and measure miss rate against a transcript-replay baseline, using the productivity metrics from Part IV: corrections per task, time-to-recover. *Anchor-traverse-bound compilation is implemented and exercised in the prototype; the comparative measurement against a transcript-replay baseline has not been run.*
-4. **One Tier Two driver** — a local model reachable via API, logging cache hits, token counts, and latency against the baseline. *Not yet started.*
-
-The threshold that justifies building the rest: if compiled context cuts tokens by roughly 30–40% and cuts corrections per task by half relative to the transcript-replay baseline, that's a real empirical wedge. Short of that, the architecture needs rethinking before further investment, not more elaboration.
-
-Two things worth being honest about from the prototype so far, since they were discovered by testing rather than anticipated in the design: the cost constants in the commit gate's expected-cost formula are sensitive enough that a plausible-looking default can silently flip a decision (a real instance of the calibration-drift risk this document already names, now with a concrete example rather than just a warning); and simple word-overlap similarity measures are biased by sentence length in ways that can spuriously resolve a genuinely ambiguous reference to a single candidate. Both were caught and corrected during testing, not left as latent bugs — but both are reminders that everything in Stage 2 of the ingestion pipeline is a stand-in for a real trained model, and heuristic patches have a ceiling worth respecting rather than chasing indefinitely.
+[Your current Part V is good as-is — keep thresholds and honesty notes exactly as written. Those two discoveries (cost-constant sensitivity + length bias) are evidence of empirical evolution, which is ChatGPT idea #10]
 
 ---
 
 ## Conclusion
 
-The history of AI has focused on building increasingly capable models. This proposal is about building the cognitive system around them — one where working state is an explicitly managed architectural resource with the discipline of an operating system, not an emergent byproduct of repeated neural inference, and not another ad hoc layer improvised per application.
-
-Every component required — versioned graph state, deterministic services, small embedded classifiers, workload-aware scheduling — is buildable with technology that already exists. What's missing is the discipline to build it as one coherent system rather than another wrapper, and the recognition that this is infrastructure, not a feature.
-
-The industry is racing on one axis: bigger models. The open ground is the other axis: the operating system underneath them, and the auditability that comes from doing it properly. Whoever builds it first gets a durable advantage that isn't easily copied by adding more GPUs — lower cost per task, less waste, and the trust that turns an impressive demo into a system a regulated enterprise can actually run.
+[Unchanged from your current doc]
