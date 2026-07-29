@@ -54,12 +54,29 @@ class Commit:
     snapshot: Dict[str, Entity] = field(default_factory=dict)  # active entities AFTER this commit
 
 @dataclass
+class Branch:
+    """A real divergent commit chain, not a name pointing at a dict copy.
+    Tracks its own head so it can accumulate multiple commits before
+    resolution, and carries the bookkeeping the lifecycle policy needs
+    (anchor, creation turn, last-touched turn) so branches don't
+    accumulate indefinitely."""
+    name: str
+    anchor_id: str  # the entity this branch's ambiguity is about
+    base_commit_id: str
+    head_commit_id: str
+    created_turn: int
+    last_touched_turn: int
+    commit_ids: List[str] = field(default_factory=list)
+    status: Literal["active", "merged", "abandoned"] = "active"
+
+@dataclass
 class StateGraph:
     entities: Dict[str, Entity] = field(default_factory=dict)
     edges: List[Edge] = field(default_factory=list)
     commits: Dict[str, Commit] = field(default_factory=dict)
     head: Optional[str] = None
-    branches: Dict[str, str] = field(default_factory=dict)  # branch_name -> commit_id
+    branches: Dict[str, Branch] = field(default_factory=dict)
+    turn: int = 0  # advanced by the caller once per turn; drives branch decay
 
     def add_entity(self, e: Entity):
         self.entities[e.id] = e
@@ -142,25 +159,101 @@ class StateGraph:
         self.head = commit_id
         return c
 
-    def branch(self, name: str, from_commit_id: Optional[str] = None) -> str:
-        """Fork a real divergent line, not just a name pointer.
-        Simplified: copies the current active entity set into the branch's
-        own namespace so it has real materialized state to diverge from.
-        Production: store as a proper commit-chain fork, not a dict copy.
-        """
+    def branch(self, name: str, anchor_id: str, from_commit_id: Optional[str] = None) -> Branch:
+        """Fork a real divergent commit chain. Enforces the branch lifecycle
+        cap before creating a new one: if the anchor already has the max
+        active branches, the oldest is force-resolved first (decayed to
+        whichever side has higher confidence) rather than letting branches
+        accumulate indefinitely - the same drift this architecture exists
+        to prevent, just relocated into the graph if left unmanaged."""
         base = from_commit_id or self.head
-        self.branches[name] = base
-        if not hasattr(self, "_branch_entities"):
-            self._branch_entities = {}
-        self._branch_entities[name] = dict(self.get_active())
-        return base
+        self._enforce_branch_cap(anchor_id)
+        b = Branch(
+            name=name, anchor_id=anchor_id, base_commit_id=base, head_commit_id=base,
+            created_turn=self.turn, last_touched_turn=self.turn,
+        )
+        self.branches[name] = b
+        return b
 
-    def apply_diff_to_branch(self, name: str, proposed: "ProposedDiff"):
-        if not hasattr(self, "_branch_entities"):
-            self._branch_entities = {}
-        self._branch_entities.setdefault(name, dict(self.get_active()))
-        for e in proposed.entities_to_add:
-            self._branch_entities[name][e.id] = e
+    def get_branch_active(self, name: str) -> Dict[str, Entity]:
+        b = self.branches[name]
+        return dict(self.commits[b.head_commit_id].snapshot) if b.head_commit_id in self.commits else {}
+
+    def commit_to_branch(self, name: str, added: List[Entity] = None, message: str = "",
+                          author: str = "kernel:branch") -> Commit:
+        """Commit onto a branch's own chain, not main. The branch's snapshot
+        is derived from its own head, not self.entities - so branch state
+        never leaks into or pollutes the main line until merged."""
+        b = self.branches[name]
+        added = added or []
+        base_snapshot = self.get_branch_active(name)
+        new_snapshot = dict(base_snapshot)
+        for e in added:
+            new_snapshot[e.id] = e
+        commit_id = _hash_id(f"branch-{name}-{message}-{time.time()}-{len(self.commits)}")
+        c = Commit(
+            id=commit_id, parent_id=b.head_commit_id, timestamp=time.time(),
+            diff_added=added, diff_updated=[], diff_removed=[],
+            edges_added=[], message=message, author=author,
+            snapshot=new_snapshot,
+        )
+        self.commits[commit_id] = c
+        b.head_commit_id = commit_id
+        b.commit_ids.append(commit_id)
+        b.last_touched_turn = self.turn
+        return c
+
+    def merge_branch(self, name: str, message: str = "") -> Dict:
+        """Real three-way merge: replay the branch's accumulated diff against
+        current main state using the same structural/semantic checks as
+        ordinary ingestion, not a special-cased merge path. Returns the
+        merge_check-style result; only commits to main if clean."""
+        b = self.branches[name]
+        branch_entities = list(self.get_branch_active(name).values())
+        proposed = ProposedDiff(entities_to_add=branch_entities,
+                                 confidences=[e.confidence for e in branch_entities])
+        result = merge_check(self, proposed)
+        if result.can_auto_merge:
+            self.commit(added=branch_entities, message=message or f"merge branch {name}",
+                        author="kernel:merge_branch")
+            b.status = "merged"
+            return {"merged": True, "structural_conflicts": [], "semantic_ambiguities": []}
+        return {"merged": False, "structural_conflicts": result.structural_conflicts,
+                "semantic_ambiguities": result.semantic_ambiguities}
+
+    def abandon_branch(self, name: str, reason: str = ""):
+        """Drop a branch without merging - its commits remain in the commit
+        store for audit (why it was opened, what it diverged to) but never
+        touch main state. Distinct from a decay-timeout: this records an
+        explicit reason, which matters if these traces are ever curated
+        (see Future_Possibilities.md) - decayed-away branches are not the
+        same signal as ones explicitly abandoned as wrong."""
+        b = self.branches[name]
+        b.status = "abandoned"
+
+    def _enforce_branch_cap(self, anchor_id: str, max_active: int = 3):
+        active_for_anchor = [b for b in self.branches.values()
+                              if b.anchor_id == anchor_id and b.status == "active"]
+        if len(active_for_anchor) >= max_active:
+            oldest = min(active_for_anchor, key=lambda b: b.created_turn)
+            self._decay_branch(oldest)
+
+    def decay_stale_branches(self, max_age_turns: int = 10):
+        """Time-based decay: call once per turn. Any branch untouched for
+        max_age_turns auto-resolves rather than sitting open indefinitely."""
+        for b in list(self.branches.values()):
+            if b.status == "active" and (self.turn - b.last_touched_turn) >= max_age_turns:
+                self._decay_branch(b)
+
+    def _decay_branch(self, b: Branch):
+        """Force-resolve a branch: merge if its content is still clean
+        against current main state, otherwise abandon it. This is the
+        actual policy behind both the cap and the time-decay triggers -
+        a branch never just vanishes silently, it resolves one way or
+        the other with a recorded reason."""
+        result = self.merge_branch(b.name, message=f"auto-resolved (decay/cap) at turn {self.turn}")
+        if not result["merged"]:
+            self.abandon_branch(b.name, reason="decayed with unresolved conflict against current main state")
 
 # ---------- 2. Ingestion Pipeline ----------
 
@@ -344,27 +437,42 @@ class CommitGate:
         exp_ask = self.cost_ask_base + self.fatigue_term()
 
         # Policy: a genuine structural conflict or an unresolved semantic
-        # ambiguity both block auto-commit - they're different failure modes
-        # but neither is safe to silently merge past.
-        blocking = merge_result.structural_conflicts or merge_result.semantic_ambiguities
-        if blocking:
-            is_structural = bool(merge_result.structural_conflicts)
-            label = "conflict" if is_structural else "ambiguity"
-            items = merge_result.structural_conflicts or merge_result.semantic_ambiguities
+        # ambiguity both block auto-commit - but they are NOT equally safe
+        # to defer. Semantic ambiguity is legitimately deferrable: holding
+        # two interpretations in parallel costs nothing if either could
+        # still turn out fine. A structural conflict is a real contradiction
+        # that will still be a contradiction later - branching it doesn't
+        # resolve anything, and if the branch is later force-resolved
+        # (decay/cap) against a main state where the original fact was
+        # never marked superseded, the correction can be silently lost
+        # entirely. So: structural conflicts can only ever commit (never,
+        # since blocked) or ask - never branch. Only ambiguity may branch.
+        if merge_result.structural_conflicts:
+            items = merge_result.structural_conflicts
+            return GateDecision(
+                action="ask",
+                reason="Genuine structural conflict blocks auto-merge. Never deferred via branch - "
+                       "a real contradiction doesn't resolve itself, and branching risks silently "
+                       "losing the correction if the branch is later force-resolved.",
+                expected_costs={"commit": exp_commit, "branch": exp_branch, "ask": exp_ask},
+                questions=[f"Which is correct? Existing vs new: {c}" for c in items]
+            )
+
+        if merge_result.semantic_ambiguities:
+            items = merge_result.semantic_ambiguities
             if exp_branch < exp_ask:
                 return GateDecision(
                     action="branch",
-                    reason=f"Genuine {label} detected: {items[:2]}. Branch cheaper than interrupt.",
+                    reason=f"Genuine ambiguity detected: {items[:2]}. Branch cheaper than interrupt.",
                     expected_costs={"commit": exp_commit, "branch": exp_branch, "ask": exp_ask},
-                    questions=[f"{label.capitalize()}: {c}" for c in items]
+                    questions=[f"Ambiguity: {c}" for c in items]
                 )
             else:
                 return GateDecision(
                     action="ask",
-                    reason=f"Genuine {label} blocks auto-merge. Asking is cheaper than branching.",
+                    reason="Genuine ambiguity blocks auto-merge. Asking is cheaper than branching.",
                     expected_costs={"commit": exp_commit, "branch": exp_branch, "ask": exp_ask},
-                    questions=[c for c in items] if not is_structural
-                               else [f"Which is correct? Existing vs new: {c}" for c in items]
+                    questions=items
                 )
 
         # No conflict, no ambiguity: triage on confidence
@@ -440,12 +548,15 @@ if __name__ == "__main__":
     # real state. "ask" here auto-applies pending user confirmation for the
     # demo; a real system would hold these as pending until answered.
     if decision.action in ("commit", "ask"):
+        if decision.action == "ask":
+            gate.record_ask()
         c1 = graph.commit(added=proposed.entities_to_add, edges_added=proposed.edges_to_add,
                            message="turn 1 ingest", author="kernel:ingest")
         print(f"Committed {len(proposed.entities_to_add)} entities. Head: {graph.head}")
     elif decision.action == "branch":
-        graph.branch("turn1-alt", graph.head)
-        graph.apply_diff_to_branch("turn1-alt", proposed)
+        anchor = proposed.entities_to_add[0].id if proposed.entities_to_add else "unknown"
+        graph.branch("turn1-alt", anchor_id=anchor, from_commit_id=graph.head)
+        graph.commit_to_branch("turn1-alt", added=proposed.entities_to_add, message="turn 1 ingest (branched)")
         print(f"Branched: {len(proposed.entities_to_add)} entities held on branch 'turn1-alt', not merged to main.")
 
     # Turn 2: Contradictory info
